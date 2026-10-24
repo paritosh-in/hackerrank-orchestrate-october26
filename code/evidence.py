@@ -114,7 +114,7 @@ class EvidenceIndex:
             return
         timestamp=re.match(r"^(\d{4}-\d\d-\d\dT[^\s|]+)",line)
         observed=timestamp.group(1) if timestamp else captured_at
-        resource_match=RESOURCE_RE.search(line)
+        resource_match=RESOURCE_RE.search(clean_line)
         sys_match=re.search(r"(?:service=|\|\s*)([a-z_]+(?:_service|_platform|_storage))",line,re.I)
         system=sys_match.group(1) if sys_match else None
         category=None
