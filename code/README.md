@@ -2,23 +2,32 @@
 
 ## Current implementation
 
-The branch contains a first-pass deterministic pipeline with:
-- timestamp-aware evidence normalization for JSON, SQL, log, and text files;
+This is an experimental, deterministic first pass with:
+- timestamp-aware evidence normalization for JSON, SQL, text/logs, PDFs, and OCR-capable images;
 - current and historical identity resolution;
-- an initial policy-driven deletion planner;
-- strict CSV/JSON output validation; and
-- a public sample evaluator and intent regression tests.
+- deletion policy mapping, resource state classification, and remediation/verification planning;
+- strict CSV/JSON output validation;
+- contract, parser, intent, and planner tests; and
+- a public-sample evaluator.
 
-**This is not yet submission-ready.** PDF and image parsing, nuanced policy handling, broad sample validation, and execution/testing in a local worktree remain.
+This is **not yet submission-ready** until the GitHub Actions run is green and the public-sample results have been reviewed. Treat scores as a development diagnostic and improve systematic rules rather than hard-coding case IDs.
 
-## Run from repository root
+## Run from the repository root
 
-```bash
-python3 code/main.py
-python3 code/main.py --validate-only
-python3 code/evaluation/main.py --predictions output.csv --json
-python3 -m unittest discover -s code/tests
-python3 -m unittest discover -s code/evaluation
-```
+Install Python dependencies:
+\`\`\`bash
+python -m pip install -r code/requirements.txt
+\`\`\`
 
-The runner reads participant-facing inputs under `dataset/` and writes root-level `output.csv`. It makes no model API calls.
+For OCR of screenshot evidence, install the system Tesseract binary as well (for example, \`sudo apt-get install tesseract-ocr\` on Ubuntu).
+
+Run the pipeline and checks:
+\`\`\`bash
+PYTHONPATH=code python -m unittest discover -s code/tests -v
+PYTHONPATH=code python -m unittest discover -s code/evaluation -p "test_*.py" -v
+python code/main.py
+python code/main.py --validate-only
+python code/evaluation/main.py --predictions output.csv --json
+\`\`\`
+
+Inputs are read from the provided \`dataset/\` folder and the generated output is written to root-level \`output.csv\`. The code makes no model API calls.
