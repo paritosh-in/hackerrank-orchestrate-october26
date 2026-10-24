@@ -176,6 +176,7 @@ def load_records(ds):
 
 def identity(email,cutoff,identities,audits):
     target=n(email); uids=set(); aliases={target}
+    states={}
     for row in identities:
         uid=row.get("user_id","")
         events=sorted([e for e in audits if e.get("user_id")==uid],key=lambda e:e.get("event_time",""),reverse=True)
@@ -186,12 +187,14 @@ def identity(email,cutoff,identities,audits):
         hist=[]
         for e in events:
             if before(e.get("event_time"),cutoff) and e.get("field_name")=="email": hist += [e.get("old_value",""),e.get("new_value","")]
+        states[uid]=state
         if target in {n(state.get("email")),*(n(x) for x in hist)}: uids.add(uid)
     for row in identities:
         if row.get("user_id") in uids:
+            state=states.get(row.get("user_id"),row)
             for field in ("name","email","phone","email_hash"):
-                if row.get(field): aliases.add(n(row[field])); 
-                if field=="phone" and row.get(field): aliases.add(digits(row[field]))
+                if state.get(field): aliases.add(n(state[field]))
+                if field=="phone" and state.get(field): aliases.add(digits(state[field]))
     for e in audits:
         if e.get("user_id") in uids and before(e.get("event_time"),cutoff) and e.get("field_name") in {"name","email","phone","email_hash"}:
             for value in (e.get("old_value",""),e.get("new_value","")):
@@ -202,7 +205,7 @@ def identity(email,cutoff,identities,audits):
     return aliases,uids,next(iter(uids),"")
 def authorized(text):
     t=n(text)
-    deletion=bool(re.search(r"\b(delete|deletion|erase|erasure|remove|removal|purge|destroy|close|closed|closing|supprimer|suppression|effacer|eliminar|eliminación|borrar|löschen|gelöscht)\b",t))
+    deletion=bool(re.search(r"\b(delet(?:e|ed|ing|ion)|erase|erasure|remove|removal|purge|destroy|close|closed|closing|supprimer|suppression|effacer|eliminar|eliminación|borrar|löschen|gelöscht)\b",t))
     if not deletion: return False
     if re.search(r"\b(do not|don't|dont|never)\b.{0,25}\b(delete|erase|remove|close)\b",t): return False
     pure_nondelete=bool(re.search(r"\b(access|download|export|correct|correction|update|unsubscribe|opt out|opt-out|stop marketing)\b",t))
@@ -230,7 +233,7 @@ def policy(cat,f,cutoff):
         msg=n(f.get("message_excerpt",f.get("text","")))
         if any(x in msg for x in ("shared customer","agent","order context","delivery details","order update")): return "REDACT"
     if cat in {"ANALYTICS_PROFILE","PRODUCT_TELEMETRY"}:
-        return "ANONYMIZE" if any(f.get(k) for k in ("email","phone","email_hash","full_name","display_name")) else "RETAIN"
+        return "ANONYMIZE"
     if cat=="ACCOUNT_TOMBSTONE":
         return "REDACT" if any(f.get(k) for k in ("name","full_name","email","phone","email_hash")) else "RETAIN"
     if cat=="DATA_FLOW": return "DISABLE_DATA_FLOW"
