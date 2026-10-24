@@ -77,7 +77,7 @@ def evaluate(ds=ROOT/"dataset"):
     print("Evidence parser diagnostics:")
     records=audit.load_records(ds)
     identity_cases={case["case_id"]:case for case in sample}
-    for cid,rid in (("case_03","account_7566"),("case_10","support_002"),("case_15","data_flow_9846"),("case_16","account_994"),("case_16","search_1007")):
+    for cid,rid in (("case_03","account_7566"),("case_03","analytics_9406"),("case_04","account_004"),("case_04","analytics_901"),("case_07","support_001"),("case_09","account_3960"),("case_10","support_002"),("case_15","data_flow_9846"),("case_16","account_994"),("case_16","search_1007"),("case_21","analytics_5335")):
         case=identity_cases.get(cid,{})
         aliases,uids,_=audit.identity(case.get("email",""),case.get("audit_at",""),read_csv(ds/"user_identities.csv"),read_csv(ds/"user_audit_log.csv"))
         hits=[r for r in records if r.rid==rid]
