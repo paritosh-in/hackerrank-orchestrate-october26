@@ -218,7 +218,10 @@ def text_records(text,eid,captured,source):
         sm=re.search(r"\b(?:service|system)=([A-Za-z0-9_-]+)",line)
         raw_system=sm.group(1) if sm else "unknown_system"
         sysid=infer_system([raw_system])
-        cat=infer_category([raw_system],f=f)
+        cat=infer_category([raw_system,source],f=f)
+        sysid=infer_system([raw_system,source])
+        if sysid=="unknown_system":
+            sysid={"SUPPORT_MESSAGE":"support_platform","SUPPORT_ATTACHMENT":"support_platform","ANALYTICS_PROFILE":"analytics_platform","USER_PROFILE":"account_service","SEARCH_INDEX_ENTRY":"search_service","USER_EXPORT":"export_service","DATA_FLOW":"integration_service","BACKUP_ARCHIVE":"backup_service","SECURITY_AUDIT_LOG":"security_service","EMAIL_DELIVERY_LOG":"email_delivery_service","MARKETING_PROFILE":"marketing_platform","ACCOUNT_TOMBSTONE":"identity_service"}.get(cat,sysid)
         state=infer_state(f,cat,line)
         if is_handover:
             obs,raw_system,rid,cat,state=parts[:5]
@@ -321,7 +324,18 @@ def audit_case(case,records,identities,audits,activities=None):
     cid=case["case_id"]; cutoff=case.get("audit_at","")
     if not authorized(case.get("request_text","")): return {"case_id":cid,"deletion_status":"NOT_APPLICABLE","steps_json":"[]"}
     aliases,uids,uid=identity(case.get("email",""),cutoff,identities,audits)
-    eligible=[r for r in records if r.category!="SNAPSHOT_MARKER" and before(r.captured,cutoff) and before(r.timestamp,cutoff) and matches(r,aliases,uids)]
+    report_time=dt(case.get("reported_at",""))
+    # A successful anonymization action immediately preceding the reported completion
+    # can link an otherwise unidentifiable analytics readback to this case. The
+    # readback file, not the activity claim, remains the verification evidence.
+    correlated_analytics=set()
+    for event in (activities or []):
+        if event.get("event_type")!="ANONYMIZE_RECORD" or event.get("target_system")!="analytics_platform" or event.get("reported_result")!="SUCCESS":
+            continue
+        event_time=dt(event.get("event_time",""))
+        if event_time and report_time and abs((event_time-report_time).total_seconds())<=3600:
+            correlated_analytics.add(event.get("resource_id",""))
+    eligible=[r for r in records if r.category!="SNAPSHOT_MARKER" and before(r.captured,cutoff) and before(r.timestamp,cutoff) and (matches(r,aliases,uids) or (r.rid in correlated_analytics and r.system=="analytics_platform" and r.category in {"ANALYTICS_PROFILE","PRODUCT_TELEMETRY"}))]
     groups=defaultdict(list)
     for r in eligible: groups[(r.system,r.rid)].append(r)
     findings=[]; rem=[]; ver=[]; bad=False
