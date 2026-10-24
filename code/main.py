@@ -124,6 +124,7 @@ def sql_records(path,eid,captured):
             "customer_analytics_profiles":"ANALYTICS_PROFILE","support_records":"SUPPORT_MESSAGE",
             "customer_exports":"USER_EXPORT","connector_subscriptions":"DATA_FLOW",
             "backup_restore_entries":"BACKUP_ARCHIVE","security_audit_records":"SECURITY_AUDIT_LOG",
+            "customer_analytics_reports":"ANALYTICS_PROFILE","security_audit_records":"SECURITY_AUDIT_LOG",
             "deleted_customer_references":"ACCOUNT_TOMBSTONE"}
         for table in tables:
             if table=="snapshot_scope": continue
@@ -140,9 +141,9 @@ def sql_records(path,eid,captured):
                         except json.JSONDecodeError: pass
                 rid=f.get("resource_id") or f.get("id")
                 if not rid: continue
-                raw_system=str(f.get("system_id") or "")
+                raw_system=str(f.get("system_id") or f.get("origin_system") or "")
                 sysid=raw_system if raw_system in SYSTEMS else TABLES.get(table,("unknown_system",""))[0]
-                raw_category=n(f.get("category"))
+                raw_category=n(f.get("category") or f.get("collection_name"))
                 cat=category_names.get(raw_category) or TABLES.get(table,("", ""))[1] or infer_category([],table,f)
                 obs=str(f.get("updated_at") or f.get("captured_at") or captured)
                 out.append(Record(eid,captured,obs,sysid,str(rid),cat,f,infer_state(f,cat),str(path)))
@@ -183,7 +184,7 @@ def text_records(text,eid,captured,source):
                 trace_context.setdefault(trace,{})[key]=value
     for line in lines:
         parts=[p.strip() for p in line.split(" | ")]
-        is_handover=len(parts)>=6 and RESOURCE.search(parts[2]) and EMAIL.search(line)
+        is_handover=len(parts)>=6 and RESOURCE.search(parts[2])
         if not RESOURCE.search(line) and not is_handover: continue
         match=ISO.search(line); obs=match.group(0) if match else captured
         f={k:v.strip('"') for k,v in KV.findall(line)}
@@ -265,7 +266,7 @@ def matches(rec,aliases,uids):
         for x in vals:
             if x is None: continue
             nx=n(x); key=str(k).casefold()
-            if key in {"customer_reference","subject_reference","user_id","subject_user_id","customer_id"} and nx in uidset: return True
+            if key in {"customer_reference","subject_reference","user_id","subject_user_id","customer_id","lookup_key","subject_key","match_key","subject_ref"} and nx in uidset: return True
             if key in ID_FIELDS and (nx in aliases or (key.endswith("phone") and digits(x) in aliases)): return True
             if nx in aliases: return True
     return any(n(x) in aliases or digits(x) in aliases for x in scalars(f))
