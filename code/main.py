@@ -271,7 +271,7 @@ def identity(email,cutoff,identities,audits):
                 if value:
                     aliases.add(n(value))
                     if e.get("field_name")=="phone": aliases.add(digits(value))
-    aliases.discard("")
+    aliases={value for value in aliases if value not in {"","null","none","n/a","unknown"}}
     return aliases,uids,next(iter(uids),"")
 def authorized(text):
     t=n(text)
@@ -290,10 +290,11 @@ def matches(rec,aliases,uids):
         for x in vals:
             if x is None: continue
             nx=n(x); key=str(k).casefold()
+            if nx in {"","null","none","n/a","unknown"}: continue
             if key in {"customer_reference","subject_reference","user_id","subject_user_id","customer_id","lookup_key","subject_key","match_key","subject_ref"} and nx in uidset: return True
             if key in ID_FIELDS and (nx in aliases or (key.endswith("phone") and digits(x) in aliases)): return True
             if nx in aliases: return True
-    return any(n(x) in aliases or digits(x) in aliases for x in scalars(f))
+    return any(n(x) not in {"","null","none","n/a","unknown"} and (n(x) in aliases or digits(x) in aliases) for x in scalars(f))
 def policy(cat,f,cutoff):
     if cat=="SECURITY_AUDIT_LOG":
         expiry=dt(f.get("retention_until"))
