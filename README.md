@@ -31,11 +31,18 @@ Your solution must:
 - Generate one prediction row for every request in `dataset/deletion_requests.csv`
 - Write the final predictions to `output.csv` in the repository root
 
-Run the starter Python entry point with:
+Install the evidence-extraction dependencies and run the pipeline:
 
 ```bash
+python -m pip install -r code/requirements.txt
+python -m unittest discover -s code/tests -v
 python3 code/main.py
+python3 code/evaluation/main.py
 ```
+
+The parser uses PyMuPDF/pypdf for PDFs and Pillow/pytesseract for image OCR. To OCR scanned PDFs or images, install the Tesseract OCR executable separately and ensure it is available on `PATH`. Without it, the code still runs but may miss scanned evidence.
+
+The main command reads the participant-facing files under `dataset/`, writes the root-level `output.csv`, and validates the output schema. The evaluation command compares predictions with the 32 public sample answers and refreshes the evaluation and usage reports. Review the reported mismatches before submission; passing schema validation does not mean the solution is scoring-ready.
 
 The blank template at `dataset/output.csv` is provided as a reference. Your final generated file for submission must be the root-level `output.csv`.
 
