@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 EMAIL_RE = re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.I)
-RESOURCE_RE = re.compile(r"\b(?:account|search|cache|support|export|analytics|backup|data_flow|audit_record|marketing|object|tombstone|delivery|telemetry|profile)_\d+\b", re.I)
+RESOURCE_RE = re.compile(r"\b(?:account|search|cache|support|export|analytics|backup|data_flow|audit_record|marketing|object|tombstone|delivery|telemetry|profile|legal_hold|secondary_id|identifier|email_log)_\d+\b", re.I)
 USER_RE = re.compile(r"\buser_\d+\b", re.I)
 
 def parse_time(value: str | None) -> datetime | None:
@@ -64,17 +64,67 @@ class EvidenceIndex:
             tuple(sorted(set(USER_RE.findall(" ".join(vals))))),
             json.dumps(obj,ensure_ascii=False,sort_keys=True),path,obj))
 
-    def _walk_json(self,evidence_id,path,obj,file_time,system=None,category=None):
+    def _walk_json(self,evidence_id,path,obj,file_time,system=None,category=None,parent_time=None):
+        known_systems={"account_service","identity_service","search_service","cache_service","analytics_platform","support_platform","export_service","object_storage","marketing_platform","integration_service","backup_service","security_service","notification_service","email_delivery_service","profile_service","legal_service"}
+        category_by_key={
+            "profile_lookups":"USER_PROFILE","customer_profiles":"USER_PROFILE",
+            "search_documents":"SEARCH_INDEX_ENTRY","customer_search_documents":"SEARCH_INDEX_ENTRY",
+            "search_index_entries":"SEARCH_INDEX_ENTRY","cache_entries":"CACHE_ENTRY",
+            "profiles":"ANALYTICS_PROFILE","customer_analytics_reports":"ANALYTICS_PROFILE",
+            "telemetry":"PRODUCT_TELEMETRY","product_telemetry":"PRODUCT_TELEMETRY",
+            "support_conversations":"SUPPORT_MESSAGE","support_messages":"SUPPORT_MESSAGE",
+            "support_attachments":"SUPPORT_ATTACHMENT","attachments":"SUPPORT_ATTACHMENT",
+            "customer_export_jobs":"USER_EXPORT","exports":"USER_EXPORT",
+            "connectors":"DATA_FLOW","connector_configurations":"DATA_FLOW","connector_subscriptions":"DATA_FLOW",
+            "backup_catalog":"BACKUP_ARCHIVE","restore_entries":"BACKUP_ARCHIVE",
+            "security_audit_events":"SECURITY_AUDIT_LOG","security_audit_records":"SECURITY_AUDIT_LOG",
+            "audit_records":"SECURITY_AUDIT_LOG","deleted_customer_references":"ACCOUNT_TOMBSTONE",
+            "marketing_profiles":"MARKETING_PROFILE","delivery_logs":"EMAIL_DELIVERY_LOG",
+            "email_delivery_logs":"EMAIL_DELIVERY_LOG","secondary_identifiers":"SECONDARY_IDENTIFIER",
+            "legal_holds":"LEGAL_HOLD_RECORD"
+        }
         if isinstance(obj,dict):
             current_system=obj.get("data_store") or obj.get("system") or system
             current_category=obj.get("record_type") or obj.get("collection") or category
-            observed=next((obj.get(k) for k in ("observed_at","captured_at","recorded_at","event_time","updated_at","created_at") if isinstance(obj.get(k),str)),None)
-            if obj.get("resource_id"): self._append(evidence_id,path,obj,observed or file_time,current_system,current_category)
+            own_time=next((obj.get(k) for k in ("observed_at","captured_at","recorded_at","event_time","updated_at","created_at") if isinstance(obj.get(k),str)),None)
+            current_time=own_time or parent_time or file_time
+            if obj.get("resource_id"):
+                self._append(evidence_id,path,obj,own_time or parent_time or file_time,current_system,current_category)
             for key,val in obj.items():
-                next_system=key if key in {"account_service","identity_service","search_service","cache_service","analytics_platform","support_platform","export_service","object_storage","marketing_platform","integration_service","backup_service","security_service","notification_service","email_delivery_service","profile_service"} else current_system
-                self._walk_json(evidence_id,path,val,file_time,next_system,current_category)
+                next_system=key if key in known_systems else current_system
+                key_category=category_by_key.get(str(key).casefold())
+                next_category=obj.get("record_type") or obj.get("collection") or key_category or current_category
+                self._walk_json(evidence_id,path,val,file_time,next_system,next_category,current_time)
         elif isinstance(obj,list):
-            for v in obj: self._walk_json(evidence_id,path,v,file_time,system,category)
+            for v in obj:
+                self._walk_json(evidence_id,path,v,file_time,system,category,parent_time)
+
+    def _append_text_line(self,evidence_id,path,line,line_no,captured_at):
+        if not line.strip(): return
+        parts=[part.strip() for part in line.split("|")]
+        parsed_time=parts[0] if parts and parse_time(parts[0]) else None
+        if len(parts)>=6 and parsed_time and parts[1] and parts[2]:
+            observed,system,resource,category,state,subject=parts[:6]
+            obj={"line_no":line_no,"raw_line":line,"resource_id":resource,
+                 "record_type":category,"result":state,"subject_reference":subject}
+            self._append(evidence_id,path,obj,observed,system,category)
+            return
+        timestamp=re.match(r"^(\d{4}-\d\d-\d\dT[^\s|]+)",line)
+        observed=timestamp.group(1) if timestamp else captured_at
+        resource_match=RESOURCE_RE.search(line)
+        sys_match=re.search(r"(?:service=|\|\s*)([a-z_]+(?:_service|_platform|_storage))",line,re.I)
+        system=sys_match.group(1) if sys_match else None
+        category=None
+        upper=line.upper()
+        for token,kind in (("USER_PROFILE","USER_PROFILE"),("SEARCH_INDEX_ENTRY","SEARCH_INDEX_ENTRY"),
+            ("ANALYTICS_PROFILE","ANALYTICS_PROFILE"),("PRODUCT_TELEMETRY","PRODUCT_TELEMETRY"),
+            ("SUPPORT_ATTACHMENT","SUPPORT_ATTACHMENT"),("SUPPORT_MESSAGE","SUPPORT_MESSAGE"),
+            ("USER_EXPORT","USER_EXPORT"),("DATA_FLOW","DATA_FLOW"),("BACKUP_ARCHIVE","BACKUP_ARCHIVE"),
+            ("SECURITY_AUDIT_LOG","SECURITY_AUDIT_LOG"),("ACCOUNT_TOMBSTONE","ACCOUNT_TOMBSTONE"),
+            ("EMAIL_DELIVERY_LOG","EMAIL_DELIVERY_LOG"),("LEGAL_HOLD_RECORD","LEGAL_HOLD_RECORD")):
+            if token in upper: category=kind; break
+        obj={"line_no":line_no,"line":line,"resource_id":resource_match.group(0) if resource_match else None}
+        self._append(evidence_id,path,obj,observed,system,category)
 
     def _load_manifest(self):
         for m in self.manifest:
@@ -107,14 +157,27 @@ class EvidenceIndex:
                     finally: con.close()
                 elif suffix in {".txt",".log"}:
                     for ln,line in enumerate(p.read_text(encoding="utf-8-sig",errors="replace").splitlines(),1):
-                        if not line.strip(): continue
-                        mt=re.match(r"^(\d{4}-\d\d-\d\dT[^\s|]+)",line)
-                        when=mt.group(1) if mt else m.get("captured_at")
-                        rs=RESOURCE_RE.findall(line)
-                        sysm=re.search(r"service=([a-z_]+)",line)
-                        sys=sysm.group(1) if sysm else None
-                        obj={"line_no":ln,"line":line,"resource_id":rs[0] if rs else None}
-                        self._append(m["file_id"],m["file_path"],obj,when,sys,None)
+                        self._append_text_line(m["file_id"],m["file_path"],line,ln,m.get("captured_at"))
+                elif suffix==".pdf":
+                    try:
+                        from pypdf import PdfReader
+                    except ImportError:
+                        continue
+                    reader=PdfReader(str(p))
+                    line_no=0
+                    for page in reader.pages:
+                        for line in (page.extract_text() or "").splitlines():
+                            line_no+=1
+                            self._append_text_line(m["file_id"],m["file_path"],line,line_no,m.get("captured_at"))
+                elif suffix in {".png",".jpg",".jpeg",".webp"}:
+                    try:
+                        from PIL import Image
+                        import pytesseract
+                    except ImportError:
+                        continue
+                    text=pytesseract.image_to_string(Image.open(p))
+                    for ln,line in enumerate(text.splitlines(),1):
+                        self._append_text_line(m["file_id"],m["file_path"],line,ln,m.get("captured_at"))
             except (OSError,json.JSONDecodeError,sqlite3.Error,UnicodeError):
                 continue
 
