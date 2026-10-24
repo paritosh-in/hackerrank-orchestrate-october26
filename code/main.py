@@ -1,8 +1,9 @@
-"""Ghost Data Still Exists — output contract and validation entry point.
+"""Ghost Data Still Exists — deterministic audit pipeline entry point.
 
-This initial implementation slice is deliberately conservative: it establishes
-the required output contract but does not fabricate predictions before the
-evidence-based reasoning pipeline is complete.
+Reads participant-facing data, builds an evidence-based first-pass plan for each
+case, validates the exact output contract, and writes root-level output.csv.
+This planner is still experimental and must be evaluated against the public
+sample before its output is treated as submission-ready.
 """
 from __future__ import annotations
 import argparse, csv, json
