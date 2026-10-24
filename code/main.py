@@ -156,14 +156,30 @@ def read_doc(path):
     if path.suffix.casefold()==".pdf":
         try:
             from pypdf import PdfReader
-            return "\n".join(p.extract_text() or "" for p in PdfReader(str(path)).pages)
-        except Exception: return ""
+            text="\n".join(p.extract_text() or "" for p in PdfReader(str(path)).pages)
+            if text.strip(): return text
+        except Exception:
+            pass
+        # Scanned PDFs often have no extractable text layer; render pages and OCR.
+        try:
+            import fitz
+            from PIL import Image
+            import pytesseract
+            doc=fitz.open(str(path)); pages=[]
+            for page in doc:
+                pix=page.get_pixmap(matrix=fitz.Matrix(2,2),alpha=False)
+                image=Image.frombytes("RGB",[pix.width,pix.height],pix.samples)
+                pages.append(pytesseract.image_to_string(image))
+            return "\n".join(pages)
+        except Exception:
+            return ""
     if path.suffix.casefold() in {".png",".jpg",".jpeg",".webp"}:
         try:
             from PIL import Image
             import pytesseract
             return pytesseract.image_to_string(Image.open(path))
-        except Exception: return ""
+        except Exception:
+            return ""
     return path.read_text(encoding="utf-8",errors="replace")
 def text_records(text,eid,captured,source):
     out=[]
