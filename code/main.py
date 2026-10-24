@@ -119,17 +119,37 @@ def sql_records(path,eid,captured):
         tables=[x[0] for x in db.execute("select name from sqlite_master where type='table'").fetchall()]
         if any(t.startswith("customer_profiles") for t in tables):
             out.append(Record(eid,captured,captured,"account_service","__snapshot__","SNAPSHOT_MARKER",{"snapshot_tables":tables},"",str(path)))
+        category_names={
+            "customer_profiles":"USER_PROFILE","customer_search_documents":"SEARCH_INDEX_ENTRY",
+            "customer_analytics_profiles":"ANALYTICS_PROFILE","support_records":"SUPPORT_MESSAGE",
+            "customer_exports":"USER_EXPORT","connector_subscriptions":"DATA_FLOW",
+            "backup_restore_entries":"BACKUP_ARCHIVE","security_audit_records":"SECURITY_AUDIT_LOG",
+            "deleted_customer_references":"ACCOUNT_TOMBSTONE"}
         for table in tables:
             if table=="snapshot_scope": continue
             cols=[x[1] for x in db.execute(f'pragma table_info("{table}")')]
             if "resource_id" not in cols and "id" not in cols: continue
             for row in db.execute(f'select * from "{table}"'):
-                f=dict(zip(cols,row)); rid=f.get("resource_id") or f.get("id")
-                sysid,cat=TABLES.get(table,("unknown_system",infer_category([],table,f)))
+                f=dict(zip(cols,row))
+                # Some inventory exports wrap the full source record as JSON in a SQL column.
+                for key,value in list(f.items()):
+                    if isinstance(value,str) and value.lstrip().startswith("{"):
+                        try:
+                            nested=json.loads(value)
+                            if isinstance(nested,dict): f.update(nested)
+                        except json.JSONDecodeError: pass
+                rid=f.get("resource_id") or f.get("id")
+                if not rid: continue
+                raw_system=str(f.get("system_id") or "")
+                sysid=raw_system if raw_system in SYSTEMS else TABLES.get(table,("unknown_system",""))[0]
+                raw_category=n(f.get("category"))
+                cat=category_names.get(raw_category) or TABLES.get(table,("", ""))[1] or infer_category([],table,f)
                 obs=str(f.get("updated_at") or f.get("captured_at") or captured)
                 out.append(Record(eid,captured,obs,sysid,str(rid),cat,f,infer_state(f,cat),str(path)))
-    except (sqlite3.Error,OSError): pass
-    finally: db.close()
+    except (sqlite3.Error,OSError):
+        pass
+    finally:
+        db.close()
     return out
 def read_doc(path):
     if path.suffix.casefold()==".pdf":
@@ -146,21 +166,42 @@ def read_doc(path):
     return path.read_text(encoding="utf-8",errors="replace")
 def text_records(text,eid,captured,source):
     out=[]
-    for line in text.splitlines():
+    lines=text.splitlines()
+    parsed=[]
+    trace_context={}
+    # First pass: collect identity hints on trace start lines, then attach them to
+    # resource-bearing completion lines from the same distributed trace.
+    for line in lines:
+        fields={k:v.strip('"') for k,v in KV.findall(line)}
+        trace=fields.get("trace_id","")
+        if not trace: continue
+        for key in ("lookup_key","subject_key","match_key","correlation_key","customer_email",
+                    "customer_reference","subject_reference","subject_ref","email","email_hash",
+                    "phone","owner_email","requester_email","matched_value"):
+            value=fields.get(key)
+            if value and value.casefold() not in {"null","none"}:
+                trace_context.setdefault(trace,{})[key]=value
+    for line in lines:
         parts=[p.strip() for p in line.split(" | ")]
         is_handover=len(parts)>=6 and RESOURCE.search(parts[2]) and EMAIL.search(line)
         if not RESOURCE.search(line) and not is_handover: continue
         match=ISO.search(line); obs=match.group(0) if match else captured
         f={k:v.strip('"') for k,v in KV.findall(line)}
+        trace=f.get("trace_id","")
+        if trace and trace in trace_context:
+            inherited=dict(trace_context[trace]); inherited.update(f); f=inherited
         mails=EMAIL.findall(line)
         if mails: f["emails_in_line"]=mails
         rm=RESOURCE.search(line); rid=rm.group(0) if rm else ""
         sm=re.search(r"\b(?:service|system)=([A-Za-z0-9_-]+)",line)
-        sysid=sm.group(1) if sm else "unknown_system"
-        cat=infer_category([sysid],f=f); state=infer_state(f,cat,line)
+        raw_system=sm.group(1) if sm else "unknown_system"
+        sysid=infer_system([raw_system])
+        cat=infer_category([raw_system],f=f)
+        state=infer_state(f,cat,line)
         if is_handover:
-            obs,sysid,rid,cat,state=parts[:5]
+            obs,raw_system,rid,cat,state=parts[:5]
             state={"NOT_FOUND":"ABSENT","FOUND":"PRESENT","IDENTIFIABLE":"PRESENT","ANONYMIZED":"ANONYMIZED","REDACTED":"REDACTED","ACTIVE":"ACTIVE","DISABLED":"DISABLED","BLOCKED":"BLOCKED"}.get(state.upper(),state)
+            sysid=infer_system([raw_system])
             f.update({"lookup_key":parts[5],"state":state})
             cat=cat.upper()
         if rid: out.append(Record(eid,captured,obs,sysid,rid,cat,f,state,source))
@@ -209,7 +250,7 @@ def identity(email,cutoff,identities,audits):
     return aliases,uids,next(iter(uids),"")
 def authorized(text):
     t=n(text)
-    deletion=bool(re.search(r"\b(delet(?:e|ed|ing|ion)|erase|erasure|remove|removal|purge|destroy|close|closed|closing|supprimer|suppression|effacer|eliminar|eliminación|borrar|löschen|gelöscht)\b",t))
+    deletion=bool(re.search(r"\b(delet(?:e|ed|ing|ion)|erase|erasure|remove|removal|purge|destroy|close|closed|closing|supprimer|suppression|effacer|eliminar|eliminación|borrar|löschen|gelöscht|削除|消去)\b",t))
     if not deletion: return False
     if re.search(r"\b(do not|don't|dont|never)\b.{0,25}\b(delete|erase|remove|close)\b",t): return False
     pure_nondelete=bool(re.search(r"\b(access|download|export|correct|correction|update|unsubscribe|opt out|opt-out|stop marketing)\b",t))
