@@ -250,7 +250,7 @@ def identity(email,cutoff,identities,audits):
     return aliases,uids,next(iter(uids),"")
 def authorized(text):
     t=n(text)
-    deletion=bool(re.search(r"\b(delet(?:e|ed|ing|ion)|erase|erasure|remove|removal|purge|destroy|close|closed|closing|supprimer|suppression|effacer|eliminar|eliminación|borrar|löschen|gelöscht|削除|消去)\b",t))
+    deletion=bool(re.search(r"\b(delet(?:e|ed|ing|ion)|erase|erasure|remove|removal|purge|destroy|close|closed|closing|supprimer|suppression|effacer|eliminar|eliminación|borrar|löschen|gelöscht)\b",t) or "削除" in t or "消去" in t)
     if not deletion: return False
     if re.search(r"\b(do not|don't|dont|never)\b.{0,25}\b(delete|erase|remove|close)\b",t): return False
     pure_nondelete=bool(re.search(r"\b(access|download|export|correct|correction|update|unsubscribe|opt out|opt-out|stop marketing)\b",t))
