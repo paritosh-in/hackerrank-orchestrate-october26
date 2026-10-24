@@ -167,11 +167,19 @@ class EvidenceIndex:
                     except ImportError:
                         continue
                     reader=PdfReader(str(p))
-                    line_no=0
-                    for page in reader.pages:
-                        for line in (page.extract_text() or "").splitlines():
-                            line_no+=1
-                            self._append_text_line(m["file_id"],m["file_path"],line,line_no,m.get("captured_at"))
+                    full_text="\\n".join(page.extract_text() or "" for page in reader.pages)
+                    resource_ids=sorted(set(RESOURCE_RE.findall(full_text)))
+                    if resource_ids:
+                        upper=full_text.upper()
+                        category="SUPPORT_ATTACHMENT" if "ATTACHMENT" in p.name.upper() or "SUPPORT_ATTACHMENT" in upper else None
+                        system="support_platform" if "SUPPORT" in p.name.upper() or "ATTACHMENT" in p.name.upper() else None
+                        for resource_id in resource_ids:
+                            obj={"resource_id":resource_id,"document_text":full_text}
+                            if category: obj["record_type"]=category
+                            self._append(m["file_id"],m["file_path"],obj,m.get("captured_at"),system,category)
+                    else:
+                        for ln,line in enumerate(full_text.splitlines(),1):
+                            self._append_text_line(m["file_id"],m["file_path"],line,ln,m.get("captured_at"))
                 elif suffix in {".png",".jpg",".jpeg",".webp"}:
                     try:
                         from PIL import Image
