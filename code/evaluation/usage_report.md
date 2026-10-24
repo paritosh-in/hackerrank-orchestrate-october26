@@ -1,7 +1,6 @@
 # Token Usage and Cost Report
 
-## Current milestone
-No model API calls were made; the current code is deterministic validation/evaluation only.
+No model API calls have been made by the current implementation; parsing and rules are deterministic.
 
 | Metric | Value |
 |---|---:|
@@ -11,5 +10,4 @@ No model API calls were made; the current code is deterministic validation/evalu
 | Total tokens | 0 |
 | Estimated cost | 0 (no model calls) |
 
-## Final full-dataset run
-Not available yet. This file must be updated after the run producing root-level `output.csv`. Record provider and model names, call counts, input/output/total tokens, average tokens per request, estimated total/per-request cost, and per-model and overall totals if applicable. Never include credentials.
+This is a development-stage accounting record, not the final full-dataset report. Before submission, rerun the finished pipeline and update this report with exact provider/model names (if applicable), calls, input/output/total tokens, average tokens per request, estimated total and per-request cost, and per-model and overall totals. Never include API keys or credentials.

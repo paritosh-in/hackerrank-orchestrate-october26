@@ -104,6 +104,12 @@ def main()->int:
     requests=load_requests(args.dataset_dir)
     if args.validate_only:
         result=validate_output(args.output,requests); print(f"Validated {result['rows']} rows and {result['steps']} steps"); return 0
-    raise SystemExit("Prediction engine is not implemented yet; refusing to generate speculative output.")
+    from planner import DeletionPlanner
+    planner = DeletionPlanner(args.dataset_dir)
+    predictions = {request["case_id"]: planner.plan(request) for request in requests}
+    write_output(requests, predictions, args.output)
+    stats = validate_output(args.output, requests)
+    print(f"Wrote {stats['rows']} rows and {stats['steps']} steps: {args.output}")
+    return 0
 
 if __name__=="__main__": raise SystemExit(main())

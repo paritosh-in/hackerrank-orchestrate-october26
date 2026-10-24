@@ -1,22 +1,25 @@
 # Evaluation Report
 
 ## Current milestone
-Output contract validation and sample comparison are implemented. The evidence-grounded prediction engine is not yet implemented, so no accuracy result is claimed.
+The branch contains an evidence normalizer, historical identity resolver, initial rule-driven planner, output contract validator, and public-sample evaluator. The planner is a first pass and must be tested against all 32 public sample cases before being considered submission-ready.
 
 ## Metrics
-The evaluator reports sample coverage, status accuracy, exact-case accuracy, exact step arrays, step-field accuracy, and sequence accuracy. Run `python3 code/evaluation/main.py --predictions output.csv --json` when a prediction file exists.
+Run:
+```bash
+python3 code/evaluation/main.py --predictions output.csv --json
+```
+The evaluator reports sample coverage, status accuracy, exact-case accuracy, exact step arrays, step-field accuracy, and sequence accuracy.
 
-## Additional evaluation cases
-1. **Historical identifier:** a request uses an old email that maps to a current stable user ID through an audit record. Evidence under current and historical identifiers must be considered.
-2. **Replica drift:** a primary profile is absent but a read-replica snapshot captured before audit time still contains the record. The case must be incomplete.
-3. **Recreation path:** a connector remains enabled at audit time. The plan must disable the connector before deleting dependent copies and verifying.
+## Additional cases created
+1. A direct English deletion request is authorized.
+2. A marketing-only unsubscribe is not a deletion request.
+3. A user data export/access request is not a deletion request.
+4. A Spanish permanent account deletion request is authorized.
 
-These are test specifications and must be implemented as executable fixtures in a later milestone.
+Run with `python3 -m unittest discover -s code/evaluation`.
 
-## Failures and improvements
-- Do not trust reported workflow status or activity result as proof: reconstruct state from timestamped evidence.
-- Use a fixed operation vocabulary, evidence validation, and deterministic ordering to avoid malformed output.
-- Implement identity history and parsing across structured records, logs, SQL, PDFs, and screenshots before making final predictions.
-
-## Final-run metrics
-Not available yet. Populate this section after the complete 518-row output is generated and validated.
+## Known limitations and improvements
+- PDF and screenshot evidence are not parsed by the initial normalizer.
+- Intent detection uses phrase matching and needs fuller multilingual coverage.
+- The planner needs test-driven refinement for policy exceptions, resource joins, timestamp cutoffs, and whether lack of matching evidence can prove absence.
+- Never infer state from the reported workflow status; use evidence timestamped at or before each case's `audit_at`.
