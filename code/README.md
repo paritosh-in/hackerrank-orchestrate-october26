@@ -6,6 +6,7 @@ From the repository root with Python 3.10+:
 
 ```bash
 python3 code/main.py
+python -m unittest discover -s code/tests -v
 python3 code/evaluation/main.py
 ```
 
