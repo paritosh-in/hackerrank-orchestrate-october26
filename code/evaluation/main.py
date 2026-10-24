@@ -25,11 +25,13 @@ def evaluate(pred_path:Path,gold_path:Path)->dict[str,Any]:
             for k in ("phase","system_id","resource_id","operation","state","evidence_id"):
                 field_total+=1; field_ok += ps[i].get(k)==gs[i].get(k)
             seq_total+=1; seq_ok += ps[i].get("step_no")==gs[i].get("step_no")
-    return {"sample_cases":n,"prediction_coverage":sum(c in pred for c in gold)/n if n else 0,
+    all_requests_path = gold_path.parent / "deletion_requests.csv"
+    valid_ids = set(read_rows(all_requests_path)) if all_requests_path.is_file() else set(gold)
+    return {"sample_cases":n,"predicted_rows":len(pred),"prediction_coverage":sum(c in pred for c in gold)/n if n else 0,
       "status_accuracy":status_ok/n if n else 0,"exact_case_accuracy":exact_ok/n if n else 0,
       "exact_step_arrays":exact_arrays,"step_field_accuracy":field_ok/field_total if field_total else 1,
       "sequence_accuracy":seq_ok/seq_total if seq_total else 1,
-      "missing_prediction_cases":sorted(set(gold)-set(pred)),"extra_prediction_cases":sorted(set(pred)-set(gold))}
+      "missing_prediction_cases":sorted(set(gold)-set(pred)),"extra_prediction_cases":sorted(set(pred)-valid_ids)}
 def main()->int:
     p=argparse.ArgumentParser(description=__doc__); p.add_argument("--predictions",type=Path,default=DEFAULT_OUTPUT)
     p.add_argument("--gold",type=Path,default=DATASET/"sample_output.csv"); p.add_argument("--json",action="store_true"); a=p.parse_args()
