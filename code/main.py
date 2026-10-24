@@ -64,8 +64,8 @@ class Record:
 
 def infer_category(parts, table="", f=None):
     if table in TABLES: return TABLES[table][1]
-    s=(" ".join(parts)+" "+" ".join(str(v) for v in (f or {}).values() if v is not None)).casefold()
-    for word,cat in [("tombstone","ACCOUNT_TOMBSTONE"),("legal_hold","LEGAL_HOLD_RECORD"),("security_audit","SECURITY_AUDIT_LOG"),("retention_until","SECURITY_AUDIT_LOG"),("restore_allowed","BACKUP_ARCHIVE"),("backup","BACKUP_ARCHIVE"),("connector","DATA_FLOW"),("data_flow","DATA_FLOW"),("enabled","DATA_FLOW"),("secondary_identifier","SECONDARY_IDENTIFIER"),("analytics","ANALYTICS_PROFILE"),("audience_cohort","ANALYTICS_PROFILE"),("search","SEARCH_INDEX_ENTRY"),("index","SEARCH_INDEX_ENTRY"),("export","USER_EXPORT"),("attachment","SUPPORT_ATTACHMENT"),("support","SUPPORT_MESSAGE"),("marketing","MARKETING_PROFILE"),("email_delivery","EMAIL_DELIVERY_LOG"),("cache","CACHE_ENTRY"),("account","USER_PROFILE"),("profile","USER_PROFILE")]:
+    s=(" ".join(parts)+" "+" ".join(str(k) for k in (f or {}).keys())+" "+" ".join(str(v) for v in (f or {}).values() if v is not None)).casefold()
+    for word,cat in [("tombstone","ACCOUNT_TOMBSTONE"),("legal_hold","LEGAL_HOLD_RECORD"),("correlation_key","SECONDARY_IDENTIFIER"),("security_audit","SECURITY_AUDIT_LOG"),("retention_until","SECURITY_AUDIT_LOG"),("restore_allowed","BACKUP_ARCHIVE"),("backup","BACKUP_ARCHIVE"),("connector","DATA_FLOW"),("data_flow","DATA_FLOW"),("enabled","DATA_FLOW"),("secondary_identifier","SECONDARY_IDENTIFIER"),("analytics","ANALYTICS_PROFILE"),("audience_cohort","ANALYTICS_PROFILE"),("search","SEARCH_INDEX_ENTRY"),("index","SEARCH_INDEX_ENTRY"),("export","USER_EXPORT"),("attachment","SUPPORT_ATTACHMENT"),("support","SUPPORT_MESSAGE"),("marketing","MARKETING_PROFILE"),("email_delivery","EMAIL_DELIVERY_LOG"),("cache","CACHE_ENTRY"),("account","USER_PROFILE"),("profile","USER_PROFILE")]:
         if word in s: return cat
     return "UNKNOWN"
 def infer_system(parts, table=""):
@@ -116,7 +116,10 @@ def sql_records(path,eid,captured):
     out=[]; db=sqlite3.connect(":memory:")
     try:
         db.executescript(path.read_text(encoding="utf-8",errors="replace"))
-        for (table,) in db.execute("select name from sqlite_master where type='table'"):
+        tables=[x[0] for x in db.execute("select name from sqlite_master where type='table'").fetchall()]
+        if any(t.startswith("customer_profiles") for t in tables):
+            out.append(Record(eid,captured,captured,"account_service","__snapshot__","SNAPSHOT_MARKER",{"snapshot_tables":tables},"",str(path)))
+        for table in tables:
             if table=="snapshot_scope": continue
             cols=[x[1] for x in db.execute(f'pragma table_info("{table}")')]
             if "resource_id" not in cols and "id" not in cols: continue
@@ -157,6 +160,7 @@ def text_records(text,eid,captured,source):
         cat=infer_category([sysid],f=f); state=infer_state(f,cat,line)
         if is_handover:
             obs,sysid,rid,cat,state=parts[:5]
+            state={"NOT_FOUND":"ABSENT","FOUND":"PRESENT","IDENTIFIABLE":"PRESENT","ANONYMIZED":"ANONYMIZED","REDACTED":"REDACTED","ACTIVE":"ACTIVE","DISABLED":"DISABLED","BLOCKED":"BLOCKED"}.get(state.upper(),state)
             f.update({"lookup_key":parts[5],"state":state})
             cat=cat.upper()
         if rid: out.append(Record(eid,captured,obs,sysid,rid,cat,f,state,source))
@@ -209,7 +213,7 @@ def authorized(text):
     if not deletion: return False
     if re.search(r"\b(do not|don't|dont|never)\b.{0,25}\b(delete|erase|remove|close)\b",t): return False
     pure_nondelete=bool(re.search(r"\b(access|download|export|correct|correction|update|unsubscribe|opt out|opt-out|stop marketing)\b",t))
-    explicit_delete=bool(re.search(r"\b(delete my account|remove my account|close my account|erase my account|permanently delete|delete my personal data|suppression définitive|supprimer mon compte|eliminar mi cuenta)\b",t))
+    explicit_delete=bool(re.search(r"\b(delete|erase|remove|close|purge)\b.{0,60}\b(account|file|export|data|profile|record|details|copy)\b|\b(suppression définitive|supprimer mon compte|eliminar mi cuenta)\b",t))
     return not pure_nondelete or explicit_delete
 
 def matches(rec,aliases,uids):
@@ -233,8 +237,8 @@ def policy(cat,f,cutoff):
         # The archive itself is retained; deletion completion requires restore access blocked.
         return "BLOCK_RESTORE"
     if cat=="SUPPORT_MESSAGE":
-        msg=n(f.get("message_excerpt",f.get("text","")))
-        if any(x in msg for x in ("shared customer","agent","order context","delivery details","order update")): return "REDACT"
+        # Shared support conversations are retained; remove the subject identifiers.
+        return "REDACT"
     if cat in {"ANALYTICS_PROFILE","PRODUCT_TELEMETRY"}:
         return "ANONYMIZE"
     if cat=="ACCOUNT_TOMBSTONE":
@@ -250,14 +254,35 @@ def ordered(steps):
     steps.sort(key=lambda s:(PHASE[s["phase"]],OP.get(s["operation"],99),s["system_id"],s["resource_id"]))
     for i,s in enumerate(steps,1): s["step_no"]=i
     return steps
-def audit_case(case,records,identities,audits):
+def audit_case(case,records,identities,audits,activities=None):
     cid=case["case_id"]; cutoff=case.get("audit_at","")
     if not authorized(case.get("request_text","")): return {"case_id":cid,"deletion_status":"NOT_APPLICABLE","steps_json":"[]"}
     aliases,uids,uid=identity(case.get("email",""),cutoff,identities,audits)
-    eligible=[r for r in records if before(r.captured,cutoff) and before(r.timestamp,cutoff) and matches(r,aliases,uids)]
+    eligible=[r for r in records if r.category!="SNAPSHOT_MARKER" and before(r.captured,cutoff) and before(r.timestamp,cutoff) and matches(r,aliases,uids)]
     groups=defaultdict(list)
     for r in eligible: groups[(r.system,r.rid)].append(r)
     findings=[]; rem=[]; ver=[]; bad=False
+    # Activity is used to correlate a request with a candidate resource ID only;
+    # reported operation results are not proof. A later point-in-time snapshot
+    # provides state evidence when that resource is absent from the snapshot.
+    activity_rows=activities or []
+    report_time=dt(case.get("reported_at",""))
+    deletion_events=[]
+    for event in activity_rows:
+        if event.get("event_type")!="DELETE_RECORD" or event.get("source_system")!="deletion_worker" or event.get("target_system")!="account_service":
+            continue
+        event_time=dt(event.get("event_time",""))
+        if not event_time or not report_time or abs((event_time-report_time).total_seconds())>7200:
+            continue
+        deletion_events.append((abs((event_time-report_time).total_seconds()),event))
+    deletion_events.sort(key=lambda x:x[0])
+    if deletion_events and not any(system=="account_service" for system,rid in groups):
+        event=deletion_events[0][1]
+        rid=event.get("resource_id","")
+        markers=[r for r in records if r.category=="SNAPSHOT_MARKER" and before(r.captured,cutoff) and dt(r.captured) and dt(event.get("event_time","")) and dt(r.captured)>=dt(event.get("event_time",""))]
+        markers.sort(key=lambda r:r.captured)
+        if rid and markers and not any(r.system=="account_service" and r.rid==rid and before(r.captured,cutoff) for r in records):
+            ver.append(step("VERIFICATION","account_service",rid,"VERIFY_RECORD_ABSENT","ABSENT",markers[-1].eid))
     for (system,rid),obs in groups.items():
         obs.sort(key=lambda x:(x.timestamp,x.captured))
         r=obs[-1]; f=r.fields; cat=r.category; p=policy(cat,f,cutoff); state=r.state
@@ -311,8 +336,8 @@ def audit_case(case,records,identities,audits):
     steps=ordered(steps)
     return {"case_id":cid,"deletion_status":status,"steps_json":json.dumps(steps,ensure_ascii=False,separators=(",",":"))}
 def predict(requests,ds=DATASET):
-    ids=read_csv(ds/"user_identities.csv"); audits=read_csv(ds/"user_audit_log.csv"); records=load_records(ds)
-    return sorted([audit_case(c,records,ids,audits) for c in requests],key=lambda x:x["case_id"])
+    ids=read_csv(ds/"user_identities.csv"); audits=read_csv(ds/"user_audit_log.csv"); records=load_records(ds); activities=read_csv(ds/"system_activity.csv")
+    return sorted([audit_case(c,records,ids,audits,activities) for c in requests],key=lambda x:x["case_id"])
 def write(rows,path):
     with path.open("w",encoding="utf-8",newline="") as f:
         w=csv.DictWriter(f,fieldnames=["case_id","deletion_status","steps_json"],lineterminator="\n"); w.writeheader()
