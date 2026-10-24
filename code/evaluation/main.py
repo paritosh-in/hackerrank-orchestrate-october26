@@ -74,6 +74,14 @@ def evaluate(ds=ROOT/"dataset"):
     (CODE/"evaluation"/"usage_report.md").write_text(usage,encoding="utf-8")
     print(f"Sample cases: {ncases}; status accuracy: {status_ok}/{ncases}; exact output: {exact_ok}/{ncases}; sequence: {sequence_ok}/{ncases}")
     print(f"Custom tests passed: {sum(p for _,p in custom)}/{len(custom)}")
+    print("Evidence parser diagnostics:")
+    records=audit.load_records(ds)
+    identity_cases={case["case_id"]:case for case in sample}
+    for cid,rid in (("case_03","account_7566"),("case_10","support_002"),("case_15","data_flow_9846"),("case_16","account_994"),("case_16","search_1007")):
+        case=identity_cases.get(cid,{})
+        aliases,uids,_=audit.identity(case.get("email",""),case.get("audit_at",""),read_csv(ds/"user_identities.csv"),read_csv(ds/"user_audit_log.csv"))
+        hits=[r for r in records if r.rid==rid]
+        print(f"  {cid}/{rid}: "+str([(r.eid,r.system,r.category,r.state,audit.matches(r,aliases,uids),r.timestamp) for r in hits]))
     print("First sample mismatches (expected vs predicted):")
     shown=0
     for cid, exp in expected.items():
