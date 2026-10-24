@@ -162,7 +162,7 @@ def read_doc(path):
         try:
             from pypdf import PdfReader
             text="\n".join(p.extract_text() or "" for p in PdfReader(str(path)).pages)
-            if text.strip(): return text
+            if text.strip() and (RESOURCE.search(text) or EMAIL.search(text)): return text
         except Exception:
             pass
         # Scanned PDFs often have no extractable text layer; render pages and OCR.
@@ -175,7 +175,8 @@ def read_doc(path):
                 pix=page.get_pixmap(matrix=fitz.Matrix(2,2),alpha=False)
                 image=Image.frombytes("RGB",[pix.width,pix.height],pix.samples)
                 pages.append(pytesseract.image_to_string(image))
-            return "\n".join(pages)
+            ocr_text="\n".join(pages)
+            return (text+"\n"+ocr_text).strip()
         except Exception:
             return ""
     if path.suffix.casefold() in {".png",".jpg",".jpeg",".webp"}:
