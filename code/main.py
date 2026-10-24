@@ -124,7 +124,7 @@ def sql_records(path,eid,captured):
             "customer_analytics_profiles":"ANALYTICS_PROFILE","support_records":"SUPPORT_MESSAGE",
             "customer_exports":"USER_EXPORT","connector_subscriptions":"DATA_FLOW",
             "backup_restore_entries":"BACKUP_ARCHIVE","security_audit_records":"SECURITY_AUDIT_LOG",
-            "customer_analytics_reports":"ANALYTICS_PROFILE","security_audit_records":"SECURITY_AUDIT_LOG",
+            "customer_analytics_reports":"ANALYTICS_PROFILE",
             "deleted_customer_references":"ACCOUNT_TOMBSTONE"}
         for table in tables:
             if table=="snapshot_scope": continue
