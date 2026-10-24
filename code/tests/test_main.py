@@ -17,6 +17,9 @@ class AuthorizationTests(unittest.TestCase):
     def test_multilingual_deletion(self):
         self.assertTrue(audit.authorized("Quiero eliminar mi cuenta y borrar mis datos personales."))
 
+    def test_japanese_deletion(self):
+        self.assertTrue(audit.authorized("このアカウントの完全な削除を依頼します。"))
+
     def test_marketing_opt_out_is_not_deletion(self):
         self.assertFalse(audit.authorized("Please stop marketing emails and unsubscribe me."))
 
@@ -48,6 +51,17 @@ class PolicyAndOrderingTests(unittest.TestCase):
         ])
         self.assertEqual([s["phase"] for s in steps], ["FINDING", "REMEDIATION", "VERIFICATION"])
         self.assertEqual([s["step_no"] for s in steps], [1, 2, 3])
+
+
+    def test_trace_identity_is_propagated_to_resource_line(self):
+        text = (
+            '2026-09-17T22:00:02Z level=DEBUG service=support_replica trace_id=tr-002 '
+            'event=contact_query_started lookup_key=person@example.com\\n'
+            '2026-09-17T22:00:05Z level=INFO service=support_replica trace_id=tr-002 '
+            'event=contact_query_completed resource_id=support_002 rows=1'
+        )
+        records = audit.text_records(text, "evidence_61", "2026-09-17T22:00:19Z", "support_replica.log")
+        self.assertTrue(any(r.rid == "support_002" and audit.matches(r, {"person@example.com"}, set()) for r in records))
 
 
 class OutputValidationTests(unittest.TestCase):
