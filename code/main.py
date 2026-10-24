@@ -328,14 +328,19 @@ def audit_case(case,records,identities,audits,activities=None):
     # A successful anonymization action immediately preceding the reported completion
     # can link an otherwise unidentifiable analytics readback to this case. The
     # readback file, not the activity claim, remains the verification evidence.
-    correlated_analytics=set()
+    correlated_events=[]
     for event in (activities or []):
         if event.get("event_type")!="ANONYMIZE_RECORD" or event.get("target_system")!="analytics_platform" or event.get("reported_result")!="SUCCESS":
             continue
         event_time=dt(event.get("event_time",""))
         if event_time and report_time and abs((event_time-report_time).total_seconds())<=3600:
-            correlated_analytics.add(event.get("resource_id",""))
-    eligible=[r for r in records if r.category!="SNAPSHOT_MARKER" and before(r.captured,cutoff) and before(r.timestamp,cutoff) and (matches(r,aliases,uids) or (r.rid in correlated_analytics and r.system=="analytics_platform" and r.category in {"ANALYTICS_PROFILE","PRODUCT_TELEMETRY"}))]
+            correlated_events.append(event)
+    # Only use a unique event in the report window to avoid associating unrelated
+    # analytics resources with this case.
+    correlated_analytics={correlated_events[0].get("resource_id","")} if len(correlated_events)==1 else set()
+    def unlinked_analytics(record):
+        return not any(record.fields.get(k) for k in ("user_id","customer_reference","subject_reference","email","phone","email_hash","full_name","display_name"))
+    eligible=[r for r in records if r.category!="SNAPSHOT_MARKER" and before(r.captured,cutoff) and before(r.timestamp,cutoff) and (matches(r,aliases,uids) or (r.rid in correlated_analytics and r.system=="analytics_platform" and r.category in {"ANALYTICS_PROFILE","PRODUCT_TELEMETRY"} and unlinked_analytics(r)))]
     groups=defaultdict(list)
     for r in eligible: groups[(r.system,r.rid)].append(r)
     findings=[]; rem=[]; ver=[]; bad=False
