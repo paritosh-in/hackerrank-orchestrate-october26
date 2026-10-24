@@ -238,7 +238,8 @@ def policy(cat,f,cutoff):
     if cat in {"ANALYTICS_PROFILE","PRODUCT_TELEMETRY"}:
         return "ANONYMIZE"
     if cat=="ACCOUNT_TOMBSTONE":
-        return "REDACT" if any(f.get(k) for k in ("name","full_name","email","phone","email_hash")) else "RETAIN"
+        # The stable subject reference may remain, but direct identifiers must not.
+        return "REDACT"
     if cat=="DATA_FLOW": return "DISABLE_DATA_FLOW"
     if cat in {"SUPPORT_ATTACHMENT","USER_PROFILE","SECONDARY_IDENTIFIER","SEARCH_INDEX_ENTRY","CACHE_ENTRY","USER_EXPORT","MARKETING_PROFILE"}: return "DELETE"
     if cat=="EMAIL_DELIVERY_LOG": return "REDACT" if any(f.get(k) for k in ("email","customer_email","recipient_email")) else "RETAIN"
