@@ -228,7 +228,8 @@ def policy(cat,f,cutoff):
     if cat=="SECURITY_AUDIT_LOG": return "RETAIN"
     if cat=="LEGAL_HOLD_RECORD": return "RETAIN" if n(f.get("active",f.get("legal_hold_active","true"))) not in {"false","0","inactive"} else "DELETE"
     if cat=="BACKUP_ARCHIVE":
-        return "RETAIN" if n(f.get("restore_allowed")) in {"false","0"} else "BLOCK_RESTORE"
+        # The archive itself is retained; deletion completion requires restore access blocked.
+        return "BLOCK_RESTORE"
     if cat=="SUPPORT_MESSAGE":
         msg=n(f.get("message_excerpt",f.get("text","")))
         if any(x in msg for x in ("shared customer","agent","order context","delivery details","order update")): return "REDACT"
