@@ -69,8 +69,7 @@ class EvidenceIndex:
             current_system=obj.get("data_store") or obj.get("system") or system
             current_category=obj.get("record_type") or obj.get("collection") or category
             observed=next((obj.get(k) for k in ("observed_at","captured_at","recorded_at","event_time","updated_at","created_at") if isinstance(obj.get(k),str)),None)
-            observed=observed or (obj.get("exported_at") if isinstance(obj.get("exported_at"),str) else file_time)
-            if obj.get("resource_id"): self._append(evidence_id,path,obj,observed,current_system,current_category)
+            if obj.get("resource_id"): self._append(evidence_id,path,obj,observed or file_time,current_system,current_category)
             for key,val in obj.items():
                 next_system=key if key in {"account_service","identity_service","search_service","cache_service","analytics_platform","support_platform","export_service","object_storage","marketing_platform","integration_service","backup_service","security_service","notification_service","email_delivery_service","profile_service"} else current_system
                 self._walk_json(evidence_id,path,val,file_time,next_system,current_category)
