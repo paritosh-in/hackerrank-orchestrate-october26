@@ -101,12 +101,15 @@ class EvidenceIndex:
 
     def _append_text_line(self,evidence_id,path,line,line_no,captured_at):
         if not line.strip(): return
-        parts=[part.strip() for part in line.split("|")]
+        # Handover documents may prefix structured rows with a bullet.
+        clean_line=line.strip().lstrip("-*• ").strip()
+        parts=[part.strip() for part in clean_line.split("|")]
         parsed_time=parts[0] if parts and parse_time(parts[0]) else None
         if len(parts)>=6 and parsed_time and parts[1] and parts[2]:
             observed,system,resource,category,state,subject=parts[:6]
             obj={"line_no":line_no,"raw_line":line,"resource_id":resource,
-                 "record_type":category,"result":state,"subject_reference":subject}
+                 "record_type":category,"result":state,"subject_reference":subject,
+                 "system_id":system,"observed_at":observed}
             self._append(evidence_id,path,obj,observed,system,category)
             return
         timestamp=re.match(r"^(\d{4}-\d\d-\d\dT[^\s|]+)",line)
@@ -115,7 +118,7 @@ class EvidenceIndex:
         sys_match=re.search(r"(?:service=|\|\s*)([a-z_]+(?:_service|_platform|_storage))",line,re.I)
         system=sys_match.group(1) if sys_match else None
         category=None
-        upper=line.upper()
+        upper=clean_line.upper()
         for token,kind in (("USER_PROFILE","USER_PROFILE"),("SEARCH_INDEX_ENTRY","SEARCH_INDEX_ENTRY"),
             ("ANALYTICS_PROFILE","ANALYTICS_PROFILE"),("PRODUCT_TELEMETRY","PRODUCT_TELEMETRY"),
             ("SUPPORT_ATTACHMENT","SUPPORT_ATTACHMENT"),("SUPPORT_MESSAGE","SUPPORT_MESSAGE"),
@@ -175,7 +178,10 @@ class EvidenceIndex:
                         import pytesseract
                     except ImportError:
                         continue
-                    text=pytesseract.image_to_string(Image.open(p))
+                    try:
+                        text=pytesseract.image_to_string(Image.open(p))
+                    except Exception:
+                        continue
                     for ln,line in enumerate(text.splitlines(),1):
                         self._append_text_line(m["file_id"],m["file_path"],line,ln,m.get("captured_at"))
             except (OSError,json.JSONDecodeError,sqlite3.Error,UnicodeError):
