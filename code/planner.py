@@ -421,6 +421,7 @@ class DeletionPlanner:
         remediation: list[tuple[str,str,str,str,str]] = []
         verifications: list[tuple[str,str,str,str,str]] = []
         has_account_absence = False
+        unresolved = False
 
         def finding(system: str, resource: str, operation: str, evidence: str) -> None:
             findings.append(("FINDING", system, resource, operation, evidence))
@@ -432,9 +433,15 @@ class DeletionPlanner:
         for rec, kind, state in relevant:
             system = _system_for(rec, kind)
             resource = rec.resource_id
-            action = POLICY_ACTION.get(kind)
+            action = self.rule_actions.get(kind, POLICY_ACTION.get(kind))
+            if kind == "LEGAL_HOLD_RECORD":
+                action = "RETAIN_IF_ACTIVE"
+            elif kind == "BACKUP_ARCHIVE":
+                action = "RETAIN_IF_RESTORABLE"
             if not action:
                 continue
+            if state == "UNKNOWN":
+                unresolved = True
 
             # Policy-retained records are not violations. Backup restore access
             # and legal holds are condition-sensitive.
@@ -508,7 +515,7 @@ class DeletionPlanner:
                 continue
 
             # All remaining data categories are delete-entire-record policies.
-            if state in {"FOUND", "IDENTIFIABLE", "ACTIVE", "PRESENT", "UNKNOWN"}:
+            if state in {"FOUND", "IDENTIFIABLE", "ACTIVE", "PRESENT"}:
                 finding(system, resource, "REPORT_REMAINING_RECORD", rec.evidence_id)
                 remediate(system, resource, "DELETE_RECORD")
                 verify(system, resource, "VERIFY_RECORD_ABSENT", "")
@@ -522,7 +529,7 @@ class DeletionPlanner:
             kind == "USER_PROFILE" and state in {"NOT_FOUND", "ABSENT", "DELETED", "GONE"}
             for _, kind, state in relevant
         )
-        incomplete = bool(findings) or not has_account_absence or not verifications
+        incomplete = bool(findings) or unresolved or not has_account_absence or not verifications
         phase_order = {"FINDING": 0, "REMEDIATION": 1, "VERIFICATION": 2}
         steps_source = findings + remediation + verifications
         operation_order = {
