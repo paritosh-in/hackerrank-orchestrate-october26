@@ -65,7 +65,7 @@ class Record:
 def infer_category(parts, table="", f=None):
     if table in TABLES: return TABLES[table][1]
     s=(" ".join(parts)+" "+" ".join(str(k) for k in (f or {}).keys())+" "+" ".join(str(v) for v in (f or {}).values() if v is not None)).casefold()
-    for word,cat in [("tombstone","ACCOUNT_TOMBSTONE"),("legal_hold","LEGAL_HOLD_RECORD"),("correlation_key","SECONDARY_IDENTIFIER"),("security_audit","SECURITY_AUDIT_LOG"),("retention_until","SECURITY_AUDIT_LOG"),("restore_allowed","BACKUP_ARCHIVE"),("backup","BACKUP_ARCHIVE"),("connector","DATA_FLOW"),("data_flow","DATA_FLOW"),("enabled","DATA_FLOW"),("secondary_identifier","SECONDARY_IDENTIFIER"),("support_replica","SECONDARY_IDENTIFIER"),("analytics","ANALYTICS_PROFILE"),("audience_cohort","ANALYTICS_PROFILE"),("search","SEARCH_INDEX_ENTRY"),("index","SEARCH_INDEX_ENTRY"),("export","USER_EXPORT"),("attachment","SUPPORT_ATTACHMENT"),("support","SUPPORT_MESSAGE"),("marketing","MARKETING_PROFILE"),("email_delivery","EMAIL_DELIVERY_LOG"),("cache","CACHE_ENTRY"),("account","USER_PROFILE"),("profile","USER_PROFILE")]:
+    for word,cat in [("tombstone","ACCOUNT_TOMBSTONE"),("legal_hold","LEGAL_HOLD_RECORD"),("audit_record","SECURITY_AUDIT_LOG"),("correlation_key","SECONDARY_IDENTIFIER"),("security_audit","SECURITY_AUDIT_LOG"),("retention_until","SECURITY_AUDIT_LOG"),("restore_allowed","BACKUP_ARCHIVE"),("backup","BACKUP_ARCHIVE"),("connector","DATA_FLOW"),("data_flow","DATA_FLOW"),("enabled","DATA_FLOW"),("secondary_identifier","SECONDARY_IDENTIFIER"),("support_replica","SECONDARY_IDENTIFIER"),("analytics","ANALYTICS_PROFILE"),("audience_cohort","ANALYTICS_PROFILE"),("search","SEARCH_INDEX_ENTRY"),("index","SEARCH_INDEX_ENTRY"),("export","USER_EXPORT"),("attachment","SUPPORT_ATTACHMENT"),("support","SUPPORT_MESSAGE"),("marketing","MARKETING_PROFILE"),("email_delivery","EMAIL_DELIVERY_LOG"),("cache","CACHE_ENTRY"),("account","USER_PROFILE"),("profile","USER_PROFILE")]:
         if word in s: return cat
     return "UNKNOWN"
 def infer_system(parts, table=""):
@@ -330,7 +330,7 @@ def audit_case(case,records,identities,audits,activities=None):
         if event.get("event_type")!="DELETE_RECORD" or event.get("source_system")!="deletion_worker" or event.get("target_system")!="account_service":
             continue
         event_time=dt(event.get("event_time",""))
-        if not event_time or not report_time or abs((event_time-report_time).total_seconds())>7200:
+        if not event_time or not report_time or abs((event_time-report_time).total_seconds())>600:
             continue
         deletion_events.append((abs((event_time-report_time).total_seconds()),event))
     deletion_events.sort(key=lambda x:x[0])
