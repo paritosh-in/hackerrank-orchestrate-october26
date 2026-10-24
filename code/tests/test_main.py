@@ -56,7 +56,7 @@ class PolicyAndOrderingTests(unittest.TestCase):
     def test_trace_identity_is_propagated_to_resource_line(self):
         text = (
             '2026-09-17T22:00:02Z level=DEBUG service=support_replica trace_id=tr-002 '
-            'event=contact_query_started lookup_key=person@example.com\\n'
+            'event=contact_query_started lookup_key=person@example.com\n'
             '2026-09-17T22:00:05Z level=INFO service=support_replica trace_id=tr-002 '
             'event=contact_query_completed resource_id=support_002 rows=1'
         )
