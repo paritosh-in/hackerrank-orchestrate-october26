@@ -65,7 +65,7 @@ class Record:
 def infer_category(parts, table="", f=None):
     if table in TABLES: return TABLES[table][1]
     s=(" ".join(parts)+" "+" ".join(str(k) for k in (f or {}).keys())+" "+" ".join(str(v) for v in (f or {}).values() if v is not None)).casefold()
-    for word,cat in [("tombstone","ACCOUNT_TOMBSTONE"),("legal_hold","LEGAL_HOLD_RECORD"),("correlation_key","SECONDARY_IDENTIFIER"),("security_audit","SECURITY_AUDIT_LOG"),("retention_until","SECURITY_AUDIT_LOG"),("restore_allowed","BACKUP_ARCHIVE"),("backup","BACKUP_ARCHIVE"),("connector","DATA_FLOW"),("data_flow","DATA_FLOW"),("enabled","DATA_FLOW"),("secondary_identifier","SECONDARY_IDENTIFIER"),("analytics","ANALYTICS_PROFILE"),("audience_cohort","ANALYTICS_PROFILE"),("search","SEARCH_INDEX_ENTRY"),("index","SEARCH_INDEX_ENTRY"),("export","USER_EXPORT"),("attachment","SUPPORT_ATTACHMENT"),("support","SUPPORT_MESSAGE"),("marketing","MARKETING_PROFILE"),("email_delivery","EMAIL_DELIVERY_LOG"),("cache","CACHE_ENTRY"),("account","USER_PROFILE"),("profile","USER_PROFILE")]:
+    for word,cat in [("tombstone","ACCOUNT_TOMBSTONE"),("legal_hold","LEGAL_HOLD_RECORD"),("correlation_key","SECONDARY_IDENTIFIER"),("security_audit","SECURITY_AUDIT_LOG"),("retention_until","SECURITY_AUDIT_LOG"),("restore_allowed","BACKUP_ARCHIVE"),("backup","BACKUP_ARCHIVE"),("connector","DATA_FLOW"),("data_flow","DATA_FLOW"),("enabled","DATA_FLOW"),("secondary_identifier","SECONDARY_IDENTIFIER"),("support_replica","SECONDARY_IDENTIFIER"),("analytics","ANALYTICS_PROFILE"),("audience_cohort","ANALYTICS_PROFILE"),("search","SEARCH_INDEX_ENTRY"),("index","SEARCH_INDEX_ENTRY"),("export","USER_EXPORT"),("attachment","SUPPORT_ATTACHMENT"),("support","SUPPORT_MESSAGE"),("marketing","MARKETING_PROFILE"),("email_delivery","EMAIL_DELIVERY_LOG"),("cache","CACHE_ENTRY"),("account","USER_PROFILE"),("profile","USER_PROFILE")]:
         if word in s: return cat
     return "UNKNOWN"
 def infer_system(parts, table=""):
@@ -286,7 +286,7 @@ def audit_case(case,records,identities,audits,activities=None):
     for (system,rid),obs in groups.items():
         obs.sort(key=lambda x:(x.timestamp,x.captured))
         r=obs[-1]; f=r.fields; cat=r.category; p=policy(cat,f,cutoff); state=r.state
-        has_pii=any(f.get(k) for k in ("name","full_name","email","phone","email_hash","display_name","requester_name","requester_email","requester_phone","owner_email","owner_phone","customer_email"))
+        has_pii=any(f.get(k) for k in ("name","full_name","email","phone","email_hash","display_name","requester_name","requester_email","requester_phone","owner_email","owner_phone","customer_email","lookup_key","matched_value","correlation_key","emails_in_line"))
         if p=="DELETE":
             if state=="ABSENT":
                 ver.append(step("VERIFICATION",system,rid,"VERIFY_RECORD_ABSENT","ABSENT",r.eid)); continue
