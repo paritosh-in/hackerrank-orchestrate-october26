@@ -337,12 +337,21 @@ def audit_case(case,records,identities,audits,activities=None):
         event_time=dt(event.get("event_time",""))
         if event_time and report_time and abs((event_time-report_time).total_seconds())<=3600:
             correlated_events.append(event)
-    # Only use a unique event in the report window to avoid associating unrelated
-    # analytics resources with this case.
-    correlated_analytics={correlated_events[0].get("resource_id","")} if len(correlated_events)==1 else set()
-    def unlinked_analytics(record):
-        return not any(record.fields.get(k) for k in ("user_id","customer_reference","subject_reference","email","phone","email_hash","full_name","display_name"))
-    eligible=[r for r in records if r.category!="SNAPSHOT_MARKER" and before(r.captured,cutoff) and before(r.timestamp,cutoff) and (matches(r,aliases,uids) or (r.rid in correlated_analytics and r.system=="analytics_platform" and r.category in {"ANALYTICS_PROFILE","PRODUCT_TELEMETRY"} and unlinked_analytics(r)))]
+    # Link resources first, then include every eligible observation for each linked
+    # resource. This lets a historical identifiable row link a later anonymized row
+    # without accidentally matching placeholder strings such as "no direct identifier".
+    candidates=[r for r in records if r.category!="SNAPSHOT_MARKER" and before(r.captured,cutoff) and before(r.timestamp,cutoff)]
+    linked_keys={(r.system,r.rid) for r in candidates if matches(r,aliases,uids)}
+    if len(correlated_events)==1:
+        rid=correlated_events[0].get("resource_id","")
+        related=[r for r in candidates if r.system=="analytics_platform" and r.rid==rid and r.category in {"ANALYTICS_PROFILE","PRODUCT_TELEMETRY"}]
+        if related:
+            latest=max(related,key=lambda r:(r.timestamp,r.captured))
+            linkable_fields=("user_id","customer_reference","subject_reference","email","phone","email_hash","full_name","display_name","lookup_key","correlation_key")
+            placeholders={"","null","none","n/a","unknown","no direct identifier","not applicable"}
+            if not any(n(latest.fields.get(k)) not in placeholders for k in linkable_fields):
+                linked_keys.add(("analytics_platform",rid))
+    eligible=[r for r in candidates if (r.system,r.rid) in linked_keys]
     groups=defaultdict(list)
     for r in eligible: groups[(r.system,r.rid)].append(r)
     findings=[]; rem=[]; ver=[]; bad=False
@@ -395,7 +404,7 @@ def audit_case(case,records,identities,audits,activities=None):
             continue
         obs.sort(key=lambda x:(x.timestamp,x.captured))
         r=obs[-1]; f=r.fields; cat=r.category; p=policy(cat,f,cutoff); state=r.state
-        has_pii=any(f.get(k) for k in ("name","full_name","email","phone","email_hash","display_name","requester_name","requester_email","requester_phone","owner_email","owner_phone","customer_email","lookup_key","matched_value","correlation_key","emails_in_line"))
+        has_pii=any(f.get(k) is not None and n(f.get(k)) not in {"","null","none","n/a","unknown","no direct identifier","not applicable"} for k in ("name","full_name","email","phone","email_hash","display_name","requester_name","requester_email","requester_phone","owner_email","owner_phone","customer_email","lookup_key","matched_value","correlation_key","emails_in_line"))
         if p=="DELETE":
             if state=="ABSENT":
                 ver.append(step("VERIFICATION",system,rid,"VERIFY_RECORD_ABSENT","ABSENT",r.eid)); continue
