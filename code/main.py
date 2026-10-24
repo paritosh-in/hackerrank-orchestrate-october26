@@ -72,6 +72,9 @@ def infer_system(parts, table=""):
     if table in TABLES: return TABLES[table][0]
     for p in reversed(parts):
         if p in SYSTEMS: return p
+    joined=" ".join(str(p).casefold() for p in parts)
+    for marker,system in (("analytics","analytics_platform"),("account","account_service"),("search","search_service"),("support","support_platform"),("backup","backup_service"),("export","export_service"),("connector","integration_service"),("integration","integration_service"),("security","security_service"),("marketing","marketing_platform"),("identity","identity_service")):
+        if marker in joined: return system
     return "unknown_system"
 def infer_state(f,cat,line=""):
     t=(line+" "+" ".join(f"{k}={v}" for k,v in f.items())).casefold()
@@ -89,20 +92,26 @@ def infer_state(f,cat,line=""):
     if "result=hit" in t or "identifiable" in t: return "PRESENT"
     return ""
 
-def json_records(obj,eid,captured,source,out,parents=None):
+def json_records(obj,eid,captured,source,out,parents=None,context=None):
     parents=parents or []
+    context=dict(context or {})
     if isinstance(obj,dict):
+        # Snapshot bundles describe the system and collection on the parent
+        # object, so carry those facts down to each nested resource.
+        for key in ("data_store","collection","system_id","system","service","origin_system","source"):
+            if obj.get(key): context[key]=str(obj[key])
         rid=obj.get("resource_id") or obj.get("resourceId")
         merged=dict(obj)
         for k in ("profile","record","document","entry","details"):
             if isinstance(obj.get(k),dict): merged.update(obj[k])
+        context_parts=parents+[context.get(k,"") for k in ("data_store","system_id","system","service","source","collection")]
         if rid:
             obs=str(merged.get("observed_at") or merged.get("captured_at") or merged.get("updated_at") or merged.get("indexed_at") or merged.get("event_time") or captured)
-            cat=infer_category(parents,f=merged); sysid=infer_system(parents)
+            cat=infer_category(context_parts,f=merged); sysid=infer_system(context_parts)
             out.append(Record(eid,captured,obs,sysid,str(rid),cat,merged,infer_state(merged,cat),source))
-        for k,v in obj.items(): json_records(v,eid,captured,source,out,parents+[str(k)])
+        for k,v in obj.items(): json_records(v,eid,captured,source,out,parents+[str(k)],context)
     elif isinstance(obj,list):
-        for v in obj: json_records(v,eid,captured,source,out,parents)
+        for v in obj: json_records(v,eid,captured,source,out,parents,context)
 def sql_records(path,eid,captured):
     out=[]; db=sqlite3.connect(":memory:")
     try:
