@@ -218,12 +218,45 @@ class EvidenceIndex:
         return result
 
 def request_authorizes_deletion(text:str)->bool:
+    """Classify whether the request asks for deletion/erasure, not access or correction.
+
+    Strong deletion verbs are checked before incidental references to marketing or
+    access, so a genuine deletion request remains a deletion request when it also
+    mentions integrations, analytics, or marketing preferences.
+    """
     t=" ".join(text.casefold().split())
-    non_delete=("marketing opt-out","opt out of marketing","stop marketing","correct my","correction of",
-                "change my email","update my email","access request","request access","download my data",
-                "export my data","send me my data","right to access","unsubscribe","remove me from marketing")
-    if any(x in t for x in non_delete): return False
-    delete_terms=("delete","deletion","erase","erasure","remove my account","close my account","close this account",
-                  "account closure","permanent account","permanently delete","eliminar","eliminación","eliminacion",
-                  "exclusão","exclusao","supprimer","suppression","effacer","löschen","삭제","영구 삭제","アカウントの完全な削除")
-    return any(x in t for x in delete_terms)
+    negations=(
+        "do not delete","don't delete","dont delete","do not erase","don't erase",
+        "not asking to delete","not requesting deletion","no deletion requested",
+        "i do not want to delete","i don't want to delete","without deleting",
+    )
+    correction_or_access=(
+        "correct my","correction of","change my email","update my email",
+        "remove my email from","remove this email","remove the wrong email",
+        "fix my email","update my phone","correct my phone",
+        "access request","request access","download my data","export my data",
+        "send me my data","right to access","unsubscribe","marketing opt-out",
+        "marketing opt out","opt out of marketing","stop marketing",
+        "remove me from marketing","remove me from the mailing list",
+    )
+    strong_delete=(
+        "delete","delet","erase","erasure","close my account","close the account",
+        "close this account","account closure","account be closed","like it closed",
+        "would like it closed","closing the account","close the profile",
+        "permanent account","permanently","remove my account","remove the account",
+        "remove the profile","remove my profile","remove profile","remove records",
+        "remove all records","remove identifiable","remove personal details",
+        "remove my data","remove that search result","remove the search result",
+        "clean my personal details","purge my","forget me","right to be forgotten",
+        "eliminar","eliminación","eliminacion","exclusão","exclusao","supprimer",
+        "suppression","effacer","löschen","삭제","영구 삭제","アカウントの完全な削除",
+    )
+    if any(term in t for term in negations):
+        return False
+    if any(term in t for term in strong_delete):
+        return True
+    if any(term in t for term in correction_or_access):
+        return False
+    # A standalone remove/close/erase request is treated as deletion unless the
+    # explicit correction/access exclusions above matched.
+    return any(term in t for term in ("remove","close","closed","closing","purge","erase","delete","delet"))
