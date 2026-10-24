@@ -224,7 +224,7 @@ def text_records(text,eid,captured,source):
             sysid={"SUPPORT_MESSAGE":"support_platform","SUPPORT_ATTACHMENT":"support_platform","ANALYTICS_PROFILE":"analytics_platform","USER_PROFILE":"account_service","SEARCH_INDEX_ENTRY":"search_service","USER_EXPORT":"export_service","DATA_FLOW":"integration_service","BACKUP_ARCHIVE":"backup_service","SECURITY_AUDIT_LOG":"security_service","EMAIL_DELIVERY_LOG":"email_delivery_service","MARKETING_PROFILE":"marketing_platform","ACCOUNT_TOMBSTONE":"identity_service"}.get(cat,sysid)
         state=infer_state(f,cat,line)
         if is_handover:
-            obs,raw_system,rid,cat,state=parts[:5]
+            obs=parts[0].lstrip("- ").strip(); raw_system,rid,cat,state=parts[1:5]
             state={"NOT_FOUND":"ABSENT","FOUND":"PRESENT","IDENTIFIABLE":"PRESENT","ANONYMIZED":"ANONYMIZED","REDACTED":"REDACTED","ACTIVE":"ACTIVE","DISABLED":"DISABLED","BLOCKED":"BLOCKED"}.get(state.upper(),state)
             sysid=infer_system([raw_system])
             f.update({"lookup_key":parts[5],"state":state})
