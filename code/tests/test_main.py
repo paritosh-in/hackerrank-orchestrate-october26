@@ -43,6 +43,28 @@ class PolicyAndOrderingTests(unittest.TestCase):
             "ANONYMIZE",
         )
 
+    def test_placeholder_is_not_a_subject_identifier(self):
+        record = audit.Record("evidence_1", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z",
+                              "analytics_platform", "analytics_1", "ANALYTICS_PROFILE",
+                              {"lookup_key": "no direct identifier", "email": None}, "ANONYMIZED")
+        self.assertFalse(audit.matches(record, {"person@example.com"}, set()))
+
+    def test_sql_wrapped_json_preserves_source_system_and_identity(self):
+        import json
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "snapshot.sql"
+            record = {"resource_id": "account_100", "email": "person@example.com", "user_id": "user_100"}
+            path.write_text(
+                "CREATE TABLE customer_data_read_replica (resource_id TEXT, origin_system TEXT, collection_name TEXT, record_json TEXT, captured_at TEXT);\\n"
+                + "INSERT INTO customer_data_read_replica VALUES ('account_100','account_service','customer_profiles',"
+                + "'" + json.dumps(record).replace("'", "''") + "','2026-09-01T00:00:00Z');",
+                encoding="utf-8",
+            )
+            records = audit.sql_records(path, "evidence_1", "2026-09-01T00:00:00Z")
+            self.assertTrue(any(r.rid == "account_100" and r.system == "account_service" and
+                                r.category == "USER_PROFILE" and
+                                audit.matches(r, {"person@example.com"}, {"user_100"}) for r in records))
+
     def test_phase_order_and_consecutive_numbers(self):
         steps = audit.ordered([
             audit.step("VERIFICATION", "integration_service", "data_flow_1", "VERIFY_DATA_FLOW_DISABLED", "DISABLED"),
