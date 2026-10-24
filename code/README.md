@@ -1,16 +1,24 @@
 # Ghost Data Still Exists solution
 
-The initial slice implements the exact output schema, allowed operation vocabulary,
-step ordering checks, and a public-sample comparison utility. The prediction engine
-is not yet connected and intentionally fails rather than fabricating results.
+## Current implementation
 
-From the repository root:
+The branch contains a first-pass deterministic pipeline with:
+- timestamp-aware evidence normalization for JSON, SQL, log, and text files;
+- current and historical identity resolution;
+- an initial policy-driven deletion planner;
+- strict CSV/JSON output validation; and
+- a public sample evaluator and intent regression tests.
+
+**This is not yet submission-ready.** PDF and image parsing, nuanced policy handling, broad sample validation, and execution/testing in a local worktree remain.
+
+## Run from repository root
+
 ```bash
 python3 code/main.py
 python3 code/main.py --validate-only
-python3 code/evaluation/main.py --predictions output.csv
+python3 code/evaluation/main.py --predictions output.csv --json
 python3 -m unittest discover -s code/tests
+python3 -m unittest discover -s code/evaluation
 ```
 
-All inputs must come from the participant-facing `dataset/` directory. The final
-program must write root-level `output.csv`. No model APIs are called in this slice.
+The runner reads participant-facing inputs under `dataset/` and writes root-level `output.csv`. It makes no model API calls.
