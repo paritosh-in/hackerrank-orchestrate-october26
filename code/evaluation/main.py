@@ -74,5 +74,16 @@ def evaluate(ds=ROOT/"dataset"):
     (CODE/"evaluation"/"usage_report.md").write_text(usage,encoding="utf-8")
     print(f"Sample cases: {ncases}; status accuracy: {status_ok}/{ncases}; exact output: {exact_ok}/{ncases}; sequence: {sequence_ok}/{ncases}")
     print(f"Custom tests passed: {sum(p for _,p in custom)}/{len(custom)}")
+    print("First sample mismatches (expected vs predicted):")
+    shown=0
+    for cid, exp in expected.items():
+        got=predicted.get(cid)
+        es=norm_steps(exp["steps_json"]); gs=norm_steps(got["steps_json"]) if got else None
+        if got and got["deletion_status"]==exp["deletion_status"] and es==gs: continue
+        print(f"  {cid}: expected_status={exp['deletion_status']} predicted_status={got.get('deletion_status') if got else 'MISSING'}")
+        print("    expected=", [(x.get("system_id"),x.get("resource_id"),x.get("operation"),x.get("state"),x.get("evidence_id")) for x in (es or [])])
+        print("    predicted=", [(x.get("system_id"),x.get("resource_id"),x.get("operation"),x.get("state"),x.get("evidence_id")) for x in (gs or [])])
+        shown+=1
+        if shown>=12: break
     return 1 if any(not p for _,p in custom) else 0
 if __name__=="__main__": raise SystemExit(evaluate(Path(sys.argv[1]).resolve() if len(sys.argv)>1 else ROOT/"dataset"))
