@@ -117,15 +117,14 @@ def sql_records(path,eid,captured):
     try:
         db.executescript(path.read_text(encoding="utf-8",errors="replace"))
         tables=[x[0] for x in db.execute("select name from sqlite_master where type='table'").fetchall()]
-        if any(t.startswith("customer_profiles") for t in tables):
-            out.append(Record(eid,captured,captured,"account_service","__snapshot__","SNAPSHOT_MARKER",{"snapshot_tables":tables},"",str(path)))
         category_names={
-            "customer_profiles":"USER_PROFILE","customer_search_documents":"SEARCH_INDEX_ENTRY",
-            "customer_analytics_profiles":"ANALYTICS_PROFILE","support_records":"SUPPORT_MESSAGE",
-            "customer_exports":"USER_EXPORT","connector_subscriptions":"DATA_FLOW",
-            "backup_restore_entries":"BACKUP_ARCHIVE","security_audit_records":"SECURITY_AUDIT_LOG",
-            "customer_analytics_reports":"ANALYTICS_PROFILE",
-            "deleted_customer_references":"ACCOUNT_TOMBSTONE"}
+            "customer_profiles":"USER_PROFILE","customer_profiles_primary":"USER_PROFILE",
+            "customer_profiles_failover_replica":"USER_PROFILE","customer_search_documents":"SEARCH_INDEX_ENTRY",
+            "customer_analytics_profiles":"ANALYTICS_PROFILE","customer_analytics_reports":"ANALYTICS_PROFILE",
+            "support_records":"SUPPORT_MESSAGE","customer_exports":"USER_EXPORT",
+            "connector_subscriptions":"DATA_FLOW","backup_restore_entries":"BACKUP_ARCHIVE",
+            "security_audit_records":"SECURITY_AUDIT_LOG","deleted_customer_references":"ACCOUNT_TOMBSTONE"}
+        snapshot_categories={}
         for table in tables:
             if table=="snapshot_scope": continue
             cols=[x[1] for x in db.execute(f'pragma table_info("{table}")')]
@@ -147,6 +146,12 @@ def sql_records(path,eid,captured):
                 cat=category_names.get(raw_category) or TABLES.get(table,("", ""))[1] or infer_category([],table,f)
                 obs=str(f.get("updated_at") or f.get("captured_at") or captured)
                 out.append(Record(eid,captured,obs,sysid,str(rid),cat,f,infer_state(f,cat),str(path)))
+                # Only named, typed tables establish full-snapshot coverage for that category.
+                if table in TABLES:
+                    snapshot_categories.setdefault(cat,set()).add(str(rid))
+        if snapshot_categories:
+            fields={"snapshot_categories":{k:sorted(v) for k,v in snapshot_categories.items()}}
+            out.append(Record(eid,captured,captured,"snapshot_service","__snapshot__","SNAPSHOT_MARKER",fields,"",str(path)))
     except (sqlite3.Error,OSError):
         pass
     finally:
@@ -320,6 +325,29 @@ def audit_case(case,records,identities,audits,activities=None):
     groups=defaultdict(list)
     for r in eligible: groups[(r.system,r.rid)].append(r)
     findings=[]; rem=[]; ver=[]; bad=False
+    # Reconcile older positive observations with a later full, typed SQL snapshot.
+    # Absence only applies when that snapshot covers the same data category.
+    markers=[r for r in records if r.category=="SNAPSHOT_MARKER" and before(r.captured,cutoff)]
+    snapshot_absent={}
+    for key,observations in groups.items():
+        observations.sort(key=lambda x:(x.timestamp,x.captured))
+        latest=observations[-1]
+        if policy(latest.category,latest.fields,cutoff)!="DELETE":
+            continue
+        candidates=[]
+        for marker in markers:
+            category_resources=marker.fields.get("snapshot_categories",{})
+            if latest.category not in category_resources:
+                continue
+            if latest.rid in category_resources[latest.category]:
+                continue
+            if not before(latest.timestamp,marker.captured):
+                continue
+            candidates.append(marker)
+        if candidates:
+            snapshot_absent[key]=max(candidates,key=lambda x:x.captured)
+    for (system,rid),marker in snapshot_absent.items():
+        ver.append(step("VERIFICATION",system,rid,"VERIFY_RECORD_ABSENT","ABSENT",marker.eid))
     # Activity is used to correlate a request with a candidate resource ID only;
     # reported operation results are not proof. A later point-in-time snapshot
     # provides state evidence when that resource is absent from the snapshot.
@@ -342,6 +370,8 @@ def audit_case(case,records,identities,audits,activities=None):
         if rid and markers and not any(r.system=="account_service" and r.rid==rid and before(r.captured,cutoff) for r in records):
             ver.append(step("VERIFICATION","account_service",rid,"VERIFY_RECORD_ABSENT","ABSENT",markers[-1].eid))
     for (system,rid),obs in groups.items():
+        if (system,rid) in snapshot_absent:
+            continue
         obs.sort(key=lambda x:(x.timestamp,x.captured))
         r=obs[-1]; f=r.fields; cat=r.category; p=policy(cat,f,cutoff); state=r.state
         has_pii=any(f.get(k) for k in ("name","full_name","email","phone","email_hash","display_name","requester_name","requester_email","requester_phone","owner_email","owner_phone","customer_email","lookup_key","matched_value","correlation_key","emails_in_line"))
